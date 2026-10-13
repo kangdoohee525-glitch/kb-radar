@@ -90,14 +90,12 @@ function render(){
  const nw=ok?g.R.filter((r,i)=>chg(X[i],e,w)>TH(w)&&chg(X[i],e-L,w)<=TH(w)).map(r=>r.n):[];
  const lab=!ok?'비교 구간 부족':sp>=10?'빠르게 확산 중':sp>=3?'완만히 확산 중':sp>-3?'확산 정체':'상승세 위축';
  const px=t=>4+332*(t-w)/Math.max(1,T-w),py=r=>64-58*r/100;
- const pts=g.R.map((r,i)=>({c:r.c,r:r.r,t:on[i]})).filter(p=>p.t!=null&&p.t>K);let hd=null,cp='',pm=0;
- if(pts.length>=5){const n=pts.length,mc=pts.reduce((a,p)=>a+p.c,0)/n,mr=pts.reduce((a,p)=>a+p.r,0)/n,mt=pts.reduce((a,p)=>a+p.t,0)/n;let sxx=0,syy=0,sxy=0,sxt=0,syt=0,stt=0;
-  for(const p of pts){const dx=p.c-mc,dy=p.r-mr,dz=p.t-mt;sxx+=dx*dx;syy+=dy*dy;sxy+=dx*dy;sxt+=dx*dz;syt+=dy*dz;stt+=dz*dz}
-  const det=sxx*syy-sxy*sxy;
-  if(det>1e-6&&stt>0){const bx=(sxt*syy-syt*sxy)/det,by=(syt*sxx-sxt*sxy)/det,r2=(bx*sxt+by*syt)/stt;pm=Math.hypot(bx,by);
-   if(r2>=.15&&pm>.5){hd=(Math.atan2(bx,-by)*180/Math.PI+360)%360;cp=['북','북동','동','남동','남','남서','서','북서'][Math.round(hd/45)%8]}}}
+ const Lv=Math.max(13,Math.round(w/2)),cen=t=>{let a=0,x=0,y=0;g.R.forEach((r,i)=>{const q=Math.max(0,chg(X[i],t,K));a+=q;x+=q*r.c;y+=q*r.r});return a>0?[x/a,y/a]:null};
+ const c1=cen(e),c0=e-Lv>=K?cen(e-Lv):null,near=c=>g.R.reduce((b,r)=>Math.hypot(r.c-c[0],r.r-c[1])<Math.hypot(b.c-c[0],b.r-c[1])?r:b).n;
+ let hd=null,cp='',pm=0,nm=['',''];
+ if(c1&&c0){const dx=c1[0]-c0[0],dy=c1[1]-c0[1];pm=Math.hypot(dx,dy);if(pm>=.2){hd=(Math.atan2(dx,-dy)*180/Math.PI+360)%360;cp=['북','북동','동','남동','남','남서','서','북서'][Math.round(hd/45)%8];nm=[near(c0),near(c1)]}}
  const so=g.R.map((r,i)=>[r.n,on[i]]).filter(a=>a[1]!=null).sort((a,b)=>a[1]-b[1]),h3=a=>a.slice(0,3).map(x=>x[0]).join('·')||'–';
- const dirH=`<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><svg viewBox="-22 -22 44 44" style="width:44px;height:44px;flex:none"><circle r="21" fill="var(--card)"/>${hd==null?'':`<g transform="rotate(${hd.toFixed(0)})"><path d="M0 -15L7 5L0 1L-7 5Z" fill="var(--up)"/></g>`}</svg><div><b>${hd==null?'뚜렷한 확산 방향이 아직 없어요':`상승세가 ${cp}쪽으로 번지는 중`}</b><div class="mu">가장 먼저 ${h3(so)} → 최근 ${h3(so.slice().reverse().filter(a=>a[1]>K))}${hd==null?'':` · 옆 지역으로 번지는 데 평균 약 ${Math.round(pm)}주`}</div></div></div>`;
+ const dirH=`<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><svg viewBox="-22 -22 44 44" style="width:44px;height:44px;flex:none"><circle r="21" fill="var(--card)"/>${hd==null?'':`<g transform="rotate(${hd.toFixed(0)})"><path d="M0 -15L7 5L0 1L-7 5Z" fill="var(--up)"/></g>`}</svg><div><b>${hd==null?`최근 ${Lv}주간 상승 중심이 크게 움직이지 않았어요`:nm[0]==nm[1]?`상승 중심이 ${nm[0]} 일대에서 ${cp}쪽으로 조금씩 이동 중`:`상승 중심이 ${nm[0]} 일대에서 ${nm[1]} 쪽(${cp})으로 이동 중`}</b><div class="mu">가장 먼저 ${h3(so)} → 최근 ${h3(so.slice().reverse().filter(a=>a[1]>K))}${hd==null?'':` · 최근 ${Lv}주간 약 ${pm.toFixed(1)}칸 이동`}</div></div></div>`;
  $('#sp').innerHTML=dirH+`<div class="st"><div><small>평균 변동률</small><b class="${avg>=0?'up':'dn'}">${pc(avg)}</b></div><div><small>상승 지역 비율</small><b>${cur.toFixed(0)}%</b></div><div><small>확산 속도(최근 ${L}주)</small><b class="${sp>=0?'up':'dn'}">${ok?(sp>0?'+':'')+sp.toFixed(0)+'%p':'–'}</b></div></div>
  <p style="margin:0 0 6px"><b>${lab}.</b> ${ok?`최근 ${L}주 새 ${nw.length?'상승 전환한 지역':'새로 상승 전환한 지역은 없어요'}`:'기준 시점을 더 최근으로 옮기면 확산 속도를 볼 수 있어요.'}</p>${nw.map(n=>`<span class="chip">${n}</span>`).join('')}
  <svg viewBox="0 0 340 70" style="margin-top:8px" role="img" aria-label="상승 지역 비율 추이"><line x1="4" x2="336" y1="64" y2="64" stroke="var(--line)"/><polyline fill="none" stroke="var(--fg)" stroke-width="2" points="${rs.map((r,i)=>px(w+i).toFixed(1)+','+py(r).toFixed(1)).join(' ')}"/><circle cx="${px(e)}" cy="${py(cur)}" r="4" fill="var(--up)"/></svg>

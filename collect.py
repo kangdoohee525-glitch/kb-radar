@@ -2,12 +2,12 @@
 """KB부동산 데이터허브 주간 아파트 매매·전세 가격지수 -> data.json
 사용: python collect.py                      (Playwright로 자동 다운로드)
       python collect.py --sale a.xlsx --jeonse b.xlsx   (직접 받은 엑셀로 변환만)"""
-import argparse, asyncio, datetime as dtm, json, re, sys
+import argparse, asyncio, datetime as dtm, json, re, sys, urllib.parse, urllib.request
 from pathlib import Path
 import pandas as pd
 
 URL = "https://data.kbland.kr/kbstats/wmh"
-WEEKS = 156
+WEEKS = 364  # 최근 7년
 SEOUL = "도봉 노원 은평 강북 성북 중랑 서대문 종로 동대문 성동 광진 마포 중구 용산 강남 송파 강동 강서 양천 영등포 동작 서초 구로 금천 관악".split()
 GG = ("연천 파주 양주 동두천 포천 김포 고양 의정부 구리 남양주 가평 부천 광명 과천 하남 양평 시흥 안양 성남 광주 이천 "
       "안산 군포 의왕 수원 용인 여주 화성 오산 안성 평택").split()
@@ -75,6 +75,46 @@ def build(sale, jeonse):
     return {"updated": dtm.date.today().isoformat(), "end": common[-1].strftime("%Y-%m-%d"),
             "weeks": len(common) - 1, "series": res}
 
+API = "https://data-api.kbland.kr/bfmstat/weekMnthlyHuseTrnd/priceIndexOnlyWeekAptExcel"
+HDR = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+       "Referer": "https://data.kbland.kr/", "Origin": "https://data.kbland.kr", "Accept": "*/*"}
+
+def fetch_best(code, key, dest=Path("raw")):
+    """KB 데이터허브가 쓰는 엑셀 API를 직접 호출. 기간(년)을 크게 줄여가며 가장 긴 파일을 고른다.
+    code: 01=매매, 02=전세 (화면 통신 기록에서 확인한 값)"""
+    dest.mkdir(exist_ok=True)
+    best = None
+    for yrs in (10, 7, 5, 3, 2):
+        p = dest / f"{key}_{yrs}y.xlsx"
+        try:
+            q = urllib.parse.urlencode({"매매전세코드": code, "기간": yrs, "매물종별구분": "01"})
+            with urllib.request.urlopen(urllib.request.Request(f"{API}?{q}", headers=HDR), timeout=90) as r:
+                data = r.read()
+            if data[:2] != b"PK":
+                raise ValueError("엑셀이 아닌 응답: " + data[:100].decode("utf-8", "ignore"))
+            p.write_bytes(data)
+            n = len(table(p)[1])
+        except (Exception, SystemExit) as ex:
+            print(f"[정보] {key} 기간={yrs}년: 실패 ({type(ex).__name__}: {str(ex)[:150]})", file=sys.stderr)
+            continue
+        print(f"[정보] {key} 기간={yrs}년: {n}주치", file=sys.stderr)
+        if not best or n > best[0]:
+            best = (n, p)
+        if n >= WEEKS + 1:
+            break
+    if not best:
+        raise RuntimeError(f"{key}: 모든 기간 요청이 실패했습니다.")
+    final = dest / f"{key}.xlsx"
+    final.write_bytes(best[1].read_bytes())
+    return final
+
+def get_files():
+    try:
+        return fetch_best("01", "sale"), fetch_best("02", "jeonse")
+    except Exception as ex:
+        print(f"[경고] KB API 직접 호출 실패 -> 브라우저 방식으로 전환: {ex}", file=sys.stderr)
+        return asyncio.run(download())
+
 async def download(dest=Path("raw")):
     """KB 데이터허브 화면에서 '엑셀 저장' 버튼으로 매매/전세 지수 파일을 받는다.
     실패하면 raw/ 폴더에 화면 캡처(debug.png), 화면 글자(page.txt), 통신 목록(calls.txt)을 남긴다."""
@@ -123,6 +163,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--sale"); ap.add_argument("--jeonse")
     a = ap.parse_args()
-    sale, jeonse = (a.sale, a.jeonse) if a.sale and a.jeonse else asyncio.run(download())
+    sale, jeonse = (a.sale, a.jeonse) if a.sale and a.jeonse else get_files()
     Path("data.json").write_text(json.dumps(build(sale, jeonse), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print("data.json 갱신 완료")
