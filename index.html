@@ -17,6 +17,8 @@ h2{font-size:15px;margin:0 0 8px}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .seg button{font:inherit;font-size:13px;padding:6px 12px;border:0;background:none;color:var(--mut);cursor:pointer}
 .seg button.on{background:var(--fg);color:var(--bg);font-weight:600}
+.seg button:disabled{opacity:.35;cursor:not-allowed}
+.mu{font-size:12px;color:var(--mut)}
 button:focus-visible,input:focus-visible{outline:2px solid var(--dn);outline-offset:2px}
 .card{border-top:1px solid var(--line);padding:16px 0}
 .t{cursor:pointer}
@@ -41,9 +43,10 @@ svg{display:block;width:100%;height:auto}
 </style></head><body><main>
 <h1>가격변동 레이더 <span class="b" id="bd">샘플 데이터</span></h1>
 <p class="s">지수와 변동률이 얼마나 움직이는지, 상승세가 어느 동네까지 퍼졌는지 한눈에 봅니다.</p>
-<div class="row"><div class="seg" id="gm"></div><div class="seg" id="gk"></div><div class="seg" id="gw"></div></div>
+<div class="row"><div class="seg" id="gm"></div><div class="seg" id="gk"></div><div class="seg" id="gv"></div></div>
+<div class="row" style="margin-bottom:4px"><div class="seg" id="gw"></div></div><p class="s" id="hint"></p>
 <section><h2 id="mt"></h2><div id="map"></div>
-<div class="lg"><span class="dn">◀ 하락</span><span>보합</span><span class="up">상승 ▶</span></div>
+<div class="lg" id="lgd"></div>
 <div class="ctl"><button class="pb" id="pl">▶ 재생</button><input type="range" id="sl" aria-label="기준 시점"></div></section>
 <section class="card"><h2>상승세 확산</h2><div id="sp"></div></section>
 <section class="card"><h2 id="ct"></h2><div id="ch"></div></section>
@@ -61,31 +64,46 @@ const C={};
 function data(m,k){const key=m+k;if(C[key])return C[key];const g=P[m],f=rnd(m.charCodeAt(0)*7+k*131+1);
 if(REAL)return C[key]=g.R.map(r=>REAL[m][k][r.n]);return C[key]=g.R.map(r=>{const d=Math.hypot(r.c-g.o[0],r.r-g.o[1]),lag=d*g.k-(k?8:0),amp=(.25+.45*f())*Math.max(.2,1.25-d*.13)*(k?.85:1),dn=.06+.1*f(),x=[100];
 for(let t=1;t<=T;t++){const sg=1/(1+Math.exp(-(t-82-lag)/13));x.push(x[t-1]*(1+(amp*sg-dn*(1-sg)+(f()-.5)*.1)/100))}return x})}
-const chg=(x,e,w)=>(x[e]/x[e-w]-1)*100,TH=w=>w*.058,wd=()=>[[13,'3개월'],[26,'6개월'],[52,'1년'],[156,'3년'],[260,'5년'],[364,'7년']].filter(o=>o[0]<=T);
+const chg=(x,e,w)=>(x[e]/x[e-w]-1)*100,TH=w=>w*.058,wd=()=>[[13,'3개월'],[26,'6개월'],[52,'1년'],[156,'3년'],[364,'7년']].map(o=>[o[0],o[1],o[0]>T]);
 const dt=t=>{const d=new Date(END-(T-t)*6048e5);return`${String(d.getFullYear()).slice(2)}.${d.getMonth()+1}.${d.getDate()}`};
 const pc=v=>(v>0?'+':'')+v.toFixed(1)+'%';
-const S={m:'서울',k:0,w:13,e:T,sel:null,id:0};
-function seg(id,o,cur){$('#'+id).innerHTML=o.map(([v,l])=>`<button data-g="${id}" data-v="${v}" class="${v==cur?'on':''}">${l}</button>`).join('')}
+const S={m:'서울',k:0,w:13,v:'chg',e:T,sel:null,id:0};
+function seg(id,o,cur){$('#'+id).innerHTML=o.map(([v,l,d])=>`<button data-g="${id}" data-v="${v}" ${d?'disabled':''} class="${v==cur?'on':''}">${l}</button>`).join('')}
 function col(v,mx){const a=Math.min(1,Math.abs(v)/mx);if(Math.abs(v)<mx*.04)return['var(--card)','var(--fg)'];return[v>0?`rgba(229,72,63,${.2+.8*a})`:`rgba(47,91,234,${.2+.8*a})`,a>.55?'#fff':'var(--fg)']}
 function render(){
- const WD=wd();if(!WD.some(o=>o[0]==S.w))S.w=(WD.find(o=>o[0]==52)||WD[WD.length-1])[0];S.e=Math.max(S.w,Math.min(S.e,T));sl.min=S.w;sl.max=T;sl.value=S.e;sl.disabled=$('#pl').disabled=T<=S.w;
+ const WD=wd(),AV=WD.filter(o=>!o[2]);if(!AV.some(o=>o[0]==S.w))S.w=(AV.find(o=>o[0]==52)||AV[AV.length-1])[0];
+ $('#hint').textContent=AV.length<WD.length?`받아온 데이터가 ${T}주(약 ${(T/52).toFixed(1)}년)치라 ${WD.filter(o=>o[2]).map(o=>o[1]).join('·')}은 아직 볼 수 없어요.`:'';S.e=Math.max(S.w,Math.min(S.e,T));sl.min=S.w;sl.max=T;sl.value=S.e;sl.disabled=$('#pl').disabled=T<=S.w;
  const g=P[S.m],X=data(S.m,S.k),w=S.w,e=S.e,L=Math.max(4,Math.round(w/4)),v=X.map(x=>chg(x,e,w)),mx=Math.max(.3,...v.map(Math.abs));
- seg('gm',[['서울','서울'],['경기','경기']],S.m);seg('gk',[[0,'매매'],[1,'전세']],S.k);seg('gw',WD,w);
- $('#mt').textContent=`${dt(e-w)} → ${dt(e)} ${S.k?'전세':'매매'} 변동률`;
+ seg('gm',[['서울','서울'],['경기','경기']],S.m);seg('gk',[[0,'매매'],[1,'전세']],S.k);seg('gw',WD,w);seg('gv',[['chg','변동률'],['on','상승 시작 시점']],S.v);
+ $('#mt').textContent=S.v=='on'?`${dt(e)} 기준 · 현재 상승세가 시작된 시점(${S.k?'전세':'매매'})`:`${dt(e-w)} → ${dt(e)} ${S.k?'전세':'매매'} 변동률`;
+ $('#lgd').innerHTML=S.v=='on'?'<span class="up">◀ 먼저 오른 곳</span><span>회색: 상승 아님</span><span>최근 오른 곳 ▶</span>':'<span class="dn">◀ 하락</span><span>보합</span><span class="up">상승 ▶</span>';
+ const K=13,tk=TH(K),on=X.map(x=>{if(chg(x,e,K)<=tk)return null;let t=e;while(t>K&&chg(x,t-1,K)>tk)t--;return t});
+ const ov=on.filter(t=>t!=null),o0=Math.min(...ov),o1=Math.max(...ov);
+ const ocol=i=>{const t=on[i];if(t==null)return['var(--card)','var(--mut)'];const a=o1>o0?(t-o0)/(o1-o0):0;return[`rgba(229,72,63,${(1-.75*a).toFixed(2)})`,a<.55?'#fff':'var(--fg)']};
+ const otx=i=>on[i]==null?'–':on[i]<=K?'이전부터':ym(on[i]);
  const cw=64,ch=50;
- $('#map').innerHTML=`<svg viewBox="0 0 ${g.W*cw} ${g.H*ch}" role="img" aria-label="지역별 변동률 지도">`+g.R.map((r,i)=>{const[f,tc]=col(v[i],mx);
-  return`<g class="t" data-i="${i}" transform="translate(${r.c*cw},${r.r*ch})"><rect x="2" y="2" width="${cw-4}" height="${ch-4}" rx="7" fill="${f}" stroke="${S.sel===i?'var(--fg)':'none'}" stroke-width="2.5"/><text x="${cw/2}" y="${ch/2-2}" text-anchor="middle" font-size="12" font-weight="600" fill="${tc}">${r.n}</text><text x="${cw/2}" y="${ch/2+13}" text-anchor="middle" font-size="11" fill="${tc}">${pc(v[i])}</text></g>`}).join('')+'</svg>';
+ $('#map').innerHTML=`<svg viewBox="0 0 ${g.W*cw} ${g.H*ch}" role="img" aria-label="지역별 변동률 지도">`+g.R.map((r,i)=>{const[f,tc]=S.v=='on'?ocol(i):col(v[i],mx);
+  return`<g class="t" data-i="${i}" transform="translate(${r.c*cw},${r.r*ch})"><rect x="2" y="2" width="${cw-4}" height="${ch-4}" rx="7" fill="${f}" stroke="${S.sel===i?'var(--fg)':'none'}" stroke-width="2.5"/><text x="${cw/2}" y="${ch/2-2}" text-anchor="middle" font-size="12" font-weight="600" fill="${tc}">${r.n}</text><text x="${cw/2}" y="${ch/2+13}" text-anchor="middle" font-size="11" fill="${tc}">${S.v=='on'?otx(i):pc(v[i])}</text></g>`}).join('')+'</svg>';
  // 확산
  const ratio=t=>X.filter(x=>chg(x,t,w)>TH(w)).length/X.length*100,rs=[];for(let t=w;t<=T;t++)rs.push(ratio(t));
  const cur=ratio(e),ok=e-L>=w,sp=ok?cur-ratio(e-L):0,avg=v.reduce((a,b)=>a+b,0)/v.length;
  const nw=ok?g.R.filter((r,i)=>chg(X[i],e,w)>TH(w)&&chg(X[i],e-L,w)<=TH(w)).map(r=>r.n):[];
  const lab=!ok?'비교 구간 부족':sp>=10?'빠르게 확산 중':sp>=3?'완만히 확산 중':sp>-3?'확산 정체':'상승세 위축';
  const px=t=>4+332*(t-w)/Math.max(1,T-w),py=r=>64-58*r/100;
- $('#sp').innerHTML=`<div class="st"><div><small>평균 변동률</small><b class="${avg>=0?'up':'dn'}">${pc(avg)}</b></div><div><small>상승 지역 비율</small><b>${cur.toFixed(0)}%</b></div><div><small>확산 속도(최근 ${L}주)</small><b class="${sp>=0?'up':'dn'}">${ok?(sp>0?'+':'')+sp.toFixed(0)+'%p':'–'}</b></div></div>
+ const pts=g.R.map((r,i)=>({c:r.c,r:r.r,t:on[i]})).filter(p=>p.t!=null&&p.t>K);let hd=null,cp='',pm=0;
+ if(pts.length>=5){const n=pts.length,mc=pts.reduce((a,p)=>a+p.c,0)/n,mr=pts.reduce((a,p)=>a+p.r,0)/n,mt=pts.reduce((a,p)=>a+p.t,0)/n;let sxx=0,syy=0,sxy=0,sxt=0,syt=0,stt=0;
+  for(const p of pts){const dx=p.c-mc,dy=p.r-mr,dz=p.t-mt;sxx+=dx*dx;syy+=dy*dy;sxy+=dx*dy;sxt+=dx*dz;syt+=dy*dz;stt+=dz*dz}
+  const det=sxx*syy-sxy*sxy;
+  if(det>1e-6&&stt>0){const bx=(sxt*syy-syt*sxy)/det,by=(syt*sxx-sxt*sxy)/det,r2=(bx*sxt+by*syt)/stt;pm=Math.hypot(bx,by);
+   if(r2>=.15&&pm>.5){hd=(Math.atan2(bx,-by)*180/Math.PI+360)%360;cp=['북','북동','동','남동','남','남서','서','북서'][Math.round(hd/45)%8]}}}
+ const so=g.R.map((r,i)=>[r.n,on[i]]).filter(a=>a[1]!=null).sort((a,b)=>a[1]-b[1]),h3=a=>a.slice(0,3).map(x=>x[0]).join('·')||'–';
+ const dirH=`<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><svg viewBox="-22 -22 44 44" style="width:44px;height:44px;flex:none"><circle r="21" fill="var(--card)"/>${hd==null?'':`<g transform="rotate(${hd.toFixed(0)})"><path d="M0 -15L7 5L0 1L-7 5Z" fill="var(--up)"/></g>`}</svg><div><b>${hd==null?'뚜렷한 확산 방향이 아직 없어요':`상승세가 ${cp}쪽으로 번지는 중`}</b><div class="mu">가장 먼저 ${h3(so)} → 최근 ${h3(so.slice().reverse().filter(a=>a[1]>K))}${hd==null?'':` · 옆 지역으로 번지는 데 평균 약 ${Math.round(pm)}주`}</div></div></div>`;
+ $('#sp').innerHTML=dirH+`<div class="st"><div><small>평균 변동률</small><b class="${avg>=0?'up':'dn'}">${pc(avg)}</b></div><div><small>상승 지역 비율</small><b>${cur.toFixed(0)}%</b></div><div><small>확산 속도(최근 ${L}주)</small><b class="${sp>=0?'up':'dn'}">${ok?(sp>0?'+':'')+sp.toFixed(0)+'%p':'–'}</b></div></div>
  <p style="margin:0 0 6px"><b>${lab}.</b> ${ok?`최근 ${L}주 새 ${nw.length?'상승 전환한 지역':'새로 상승 전환한 지역은 없어요'}`:'기준 시점을 더 최근으로 옮기면 확산 속도를 볼 수 있어요.'}</p>${nw.map(n=>`<span class="chip">${n}</span>`).join('')}
  <svg viewBox="0 0 340 70" style="margin-top:8px" role="img" aria-label="상승 지역 비율 추이"><line x1="4" x2="336" y1="64" y2="64" stroke="var(--line)"/><polyline fill="none" stroke="var(--fg)" stroke-width="2" points="${rs.map((r,i)=>px(w+i).toFixed(1)+','+py(r).toFixed(1)).join(' ')}"/><circle cx="${px(e)}" cy="${py(cur)}" r="4" fill="var(--up)"/></svg>
  <div class="lg"><span>${dt(w)}</span><span>상승 지역 비율 추이</span><span>${dt(T)}</span></div>`;
  main();pop()}
+const ym=t=>{const d=new Date(END-(T-t)*6048e5);return`${String(d.getFullYear()).slice(2)}.${d.getMonth()+1}`};
 const full=(n,m)=>m=='서울'?(n=='중구'?n:n+'구'):n+('연천가평양평'.includes(n)?'군':'시');
 const fd=t=>{const d=new Date(END-(T-t)*6048e5);return`${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`};
 function pop(){const el=$('#pop');if(S.pop==null){el.className='';el.innerHTML='';return}
@@ -102,7 +120,7 @@ function main(){
  $('#ch').innerHTML=`<svg viewBox="0 0 340 192" role="img" aria-label="지수 및 변동률 그래프">${gl}<line x1="${L}" x2="${W-R}" y1="148" y2="148" stroke="var(--line)"/>${bars}<polyline fill="none" stroke="var(--dn)" stroke-width="2" points="${pl(A[0])}"/><polyline fill="none" stroke="var(--up)" stroke-width="2" points="${pl(A[1])}"/><line x1="${X(S.e)}" x2="${X(S.e)}" y1="10" y2="174" stroke="var(--fg)" stroke-dasharray="3 3"/>${xl}</svg>
  <div class="lg"><span><b class="dn">━</b> 매매지수 · <b class="up">━</b> 전세지수</span><span>아래 막대: ${S.k?'전세':'매매'} 주간 변동률</span></div>`}
 document.addEventListener('click',ev=>{const b=ev.target.closest('button[data-g]'),t=ev.target.closest('.t');
- if(b){const g=b.dataset.g,v=b.dataset.v;if(g=='gm'){S.m=v;S.sel=null;S.pop=null}if(g=='gk')S.k=+v;if(g=='gw')S.w=+v;render()}
+ if(b){const g=b.dataset.g,v=b.dataset.v;if(g=='gm'){S.m=v;S.sel=null;S.pop=null}if(g=='gk')S.k=+v;if(g=='gw')S.w=+v;if(g=='gv')S.v=v;render()}
  else if(ev.target.closest('[data-x]')){S.pop=null;pop()}
  else if(t){const i=+t.dataset.i;S.sel=S.sel===i?null:i;S.pop=S.sel;render()}});
 document.addEventListener('keydown',ev=>{if(ev.key=='Escape'){S.pop=null;pop()}});
