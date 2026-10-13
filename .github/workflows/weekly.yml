@@ -1,0 +1,24 @@
+name: weekly-kb-data
+on:
+  schedule:
+    - cron: "0 9 * * 5"   # 매주 금요일 18:00 KST (KB 주간통계 발표일)
+    - cron: "0 0 * * 6"   # 발표 지연 대비 토요일 09:00 KST 재시도
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pandas openpyxl playwright && playwright install --with-deps chromium
+      - run: python collect.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: raw-excel, path: raw/ }
+      - run: |
+          git config user.name "kb-bot" && git config user.email "bot@users.noreply.github.com"
+          git add data.json
+          git diff --staged --quiet || (git commit -m "data: weekly KB update" && git push)
