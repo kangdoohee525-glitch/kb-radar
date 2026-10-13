@@ -32,6 +32,12 @@ svg{display:block;width:100%;height:auto}
 .up{color:var(--up)}.dn{color:var(--dn)}
 .n{font-size:12px;color:var(--mut);margin-top:12px}
 .lg{display:flex;justify-content:space-between;font-size:11px;color:var(--mut);margin-top:6px}
+#pop{position:fixed;left:0;right:0;bottom:0;display:none;justify-content:center;padding:0 12px calc(12px + env(safe-area-inset-bottom,0px));pointer-events:none}
+#pop.on{display:flex}
+#pop>div{pointer-events:auto;width:100%;max-width:360px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:14px;padding:12px 16px;box-shadow:0 8px 28px rgba(0,0,0,.2)}
+#pop h3{margin:0 0 6px;font-size:15px;display:flex;justify-content:space-between;align-items:center}
+#pop h3 button{font:inherit;border:0;background:none;color:var(--mut);font-size:20px;line-height:1;cursor:pointer;padding:0 4px}
+#pop p{margin:2px 0;font-size:14px}
 </style></head><body><main>
 <h1>가격변동 레이더 <span class="b" id="bd">샘플 데이터</span></h1>
 <p class="s">지수와 변동률이 얼마나 움직이는지, 상승세가 어느 동네까지 퍼졌는지 한눈에 봅니다.</p>
@@ -42,7 +48,7 @@ svg{display:block;width:100%;height:auto}
 <section class="card"><h2>상승세 확산</h2><div id="sp"></div></section>
 <section class="card"><h2 id="ct"></h2><div id="ch"></div></section>
 <p class="n">타일을 누르면 해당 지역의 지수 그래프를 볼 수 있어요. 지도는 실제 면적이 아닌 위치 기준 배열입니다. 데이터는 KB부동산 데이터허브 주간 아파트 가격지수이며 매주 금요일 갱신됩니다. data.json이 없으면 샘플 데이터로 표시돼요.</p>
-</main>
+</main><div id="pop" role="dialog" aria-live="polite"></div>
 <script>
 let T=156,END=new Date(2026,8,28),REAL=null;const $=s=>document.querySelector(s);
 const P={
@@ -55,46 +61,54 @@ const C={};
 function data(m,k){const key=m+k;if(C[key])return C[key];const g=P[m],f=rnd(m.charCodeAt(0)*7+k*131+1);
 if(REAL)return C[key]=g.R.map(r=>REAL[m][k][r.n]);return C[key]=g.R.map(r=>{const d=Math.hypot(r.c-g.o[0],r.r-g.o[1]),lag=d*g.k-(k?8:0),amp=(.25+.45*f())*Math.max(.2,1.25-d*.13)*(k?.85:1),dn=.06+.1*f(),x=[100];
 for(let t=1;t<=T;t++){const sg=1/(1+Math.exp(-(t-82-lag)/13));x.push(x[t-1]*(1+(amp*sg-dn*(1-sg)+(f()-.5)*.1)/100))}return x})}
-const chg=(x,e,w)=>(x[e]/x[e-w]-1)*100,TH={1:.1,4:.4,12:1,52:3};
+const chg=(x,e,w)=>(x[e]/x[e-w]-1)*100,TH=w=>w*.058,wd=()=>[[13,'3개월'],[26,'6개월'],[52,'1년'],[156,'3년'],[260,'5년'],[364,'7년']].filter(o=>o[0]<=T);
 const dt=t=>{const d=new Date(END-(T-t)*6048e5);return`${String(d.getFullYear()).slice(2)}.${d.getMonth()+1}.${d.getDate()}`};
 const pc=v=>(v>0?'+':'')+v.toFixed(1)+'%';
-const S={m:'서울',k:0,w:4,e:T,sel:null,id:0};
+const S={m:'서울',k:0,w:13,e:T,sel:null,id:0};
 function seg(id,o,cur){$('#'+id).innerHTML=o.map(([v,l])=>`<button data-g="${id}" data-v="${v}" class="${v==cur?'on':''}">${l}</button>`).join('')}
 function col(v,mx){const a=Math.min(1,Math.abs(v)/mx);if(Math.abs(v)<mx*.04)return['var(--card)','var(--fg)'];return[v>0?`rgba(229,72,63,${.2+.8*a})`:`rgba(47,91,234,${.2+.8*a})`,a>.55?'#fff':'var(--fg)']}
 function render(){
- const g=P[S.m],X=data(S.m,S.k),w=S.w,e=S.e,v=X.map(x=>chg(x,e,w)),mx=Math.max(.3,...v.map(Math.abs));
- seg('gm',[['서울','서울'],['경기','경기']],S.m);seg('gk',[[0,'매매'],[1,'전세']],S.k);seg('gw',[[1,'1주'],[4,'4주'],[12,'12주'],[52,'1년']],w);
+ const WD=wd();if(!WD.some(o=>o[0]==S.w))S.w=(WD.find(o=>o[0]==52)||WD[WD.length-1])[0];S.e=Math.max(S.w,Math.min(S.e,T));sl.min=S.w;sl.max=T;sl.value=S.e;sl.disabled=$('#pl').disabled=T<=S.w;
+ const g=P[S.m],X=data(S.m,S.k),w=S.w,e=S.e,L=Math.max(4,Math.round(w/4)),v=X.map(x=>chg(x,e,w)),mx=Math.max(.3,...v.map(Math.abs));
+ seg('gm',[['서울','서울'],['경기','경기']],S.m);seg('gk',[[0,'매매'],[1,'전세']],S.k);seg('gw',WD,w);
  $('#mt').textContent=`${dt(e-w)} → ${dt(e)} ${S.k?'전세':'매매'} 변동률`;
  const cw=64,ch=50;
  $('#map').innerHTML=`<svg viewBox="0 0 ${g.W*cw} ${g.H*ch}" role="img" aria-label="지역별 변동률 지도">`+g.R.map((r,i)=>{const[f,tc]=col(v[i],mx);
   return`<g class="t" data-i="${i}" transform="translate(${r.c*cw},${r.r*ch})"><rect x="2" y="2" width="${cw-4}" height="${ch-4}" rx="7" fill="${f}" stroke="${S.sel===i?'var(--fg)':'none'}" stroke-width="2.5"/><text x="${cw/2}" y="${ch/2-2}" text-anchor="middle" font-size="12" font-weight="600" fill="${tc}">${r.n}</text><text x="${cw/2}" y="${ch/2+13}" text-anchor="middle" font-size="11" fill="${tc}">${pc(v[i])}</text></g>`}).join('')+'</svg>';
  // 확산
- const ratio=t=>X.filter(x=>chg(x,t,w)>TH[w]).length/X.length*100,rs=[];for(let t=56;t<=T;t++)rs.push(ratio(t));
- const cur=ratio(e),sp=cur-ratio(e-4),avg=v.reduce((a,b)=>a+b,0)/v.length;
- const nw=g.R.filter((r,i)=>chg(X[i],e,w)>TH[w]&&chg(X[i],e-4,w)<=TH[w]).map(r=>r.n);
- const lab=sp>=10?'빠르게 확산 중':sp>=3?'완만히 확산 중':sp>-3?'확산 정체':'상승세 위축';
- const px=t=>4+332*(t-56)/(T-56),py=r=>64-58*r/100;
- $('#sp').innerHTML=`<div class="st"><div><small>평균 변동률</small><b class="${avg>=0?'up':'dn'}">${pc(avg)}</b></div><div><small>상승 지역 비율</small><b>${cur.toFixed(0)}%</b></div><div><small>확산 속도(4주)</small><b class="${sp>=0?'up':'dn'}">${sp>0?'+':''}${sp.toFixed(0)}%p</b></div></div>
- <p style="margin:0 0 6px"><b>${lab}.</b> 최근 4주 새 ${nw.length?'상승 전환한 지역':'새로 상승 전환한 지역은 없어요'}</p>${nw.map(n=>`<span class="chip">${n}</span>`).join('')}
- <svg viewBox="0 0 340 70" style="margin-top:8px" role="img" aria-label="상승 지역 비율 추이"><line x1="4" x2="336" y1="64" y2="64" stroke="var(--line)"/><polyline fill="none" stroke="var(--fg)" stroke-width="2" points="${rs.map((r,i)=>px(56+i).toFixed(1)+','+py(r).toFixed(1)).join(' ')}"/><circle cx="${px(e)}" cy="${py(cur)}" r="4" fill="var(--up)"/></svg>
- <div class="lg"><span>${dt(56)}</span><span>상승 지역 비율 추이</span><span>${dt(T)}</span></div>`;
- main()}
+ const ratio=t=>X.filter(x=>chg(x,t,w)>TH(w)).length/X.length*100,rs=[];for(let t=w;t<=T;t++)rs.push(ratio(t));
+ const cur=ratio(e),ok=e-L>=w,sp=ok?cur-ratio(e-L):0,avg=v.reduce((a,b)=>a+b,0)/v.length;
+ const nw=ok?g.R.filter((r,i)=>chg(X[i],e,w)>TH(w)&&chg(X[i],e-L,w)<=TH(w)).map(r=>r.n):[];
+ const lab=!ok?'비교 구간 부족':sp>=10?'빠르게 확산 중':sp>=3?'완만히 확산 중':sp>-3?'확산 정체':'상승세 위축';
+ const px=t=>4+332*(t-w)/Math.max(1,T-w),py=r=>64-58*r/100;
+ $('#sp').innerHTML=`<div class="st"><div><small>평균 변동률</small><b class="${avg>=0?'up':'dn'}">${pc(avg)}</b></div><div><small>상승 지역 비율</small><b>${cur.toFixed(0)}%</b></div><div><small>확산 속도(최근 ${L}주)</small><b class="${sp>=0?'up':'dn'}">${ok?(sp>0?'+':'')+sp.toFixed(0)+'%p':'–'}</b></div></div>
+ <p style="margin:0 0 6px"><b>${lab}.</b> ${ok?`최근 ${L}주 새 ${nw.length?'상승 전환한 지역':'새로 상승 전환한 지역은 없어요'}`:'기준 시점을 더 최근으로 옮기면 확산 속도를 볼 수 있어요.'}</p>${nw.map(n=>`<span class="chip">${n}</span>`).join('')}
+ <svg viewBox="0 0 340 70" style="margin-top:8px" role="img" aria-label="상승 지역 비율 추이"><line x1="4" x2="336" y1="64" y2="64" stroke="var(--line)"/><polyline fill="none" stroke="var(--fg)" stroke-width="2" points="${rs.map((r,i)=>px(w+i).toFixed(1)+','+py(r).toFixed(1)).join(' ')}"/><circle cx="${px(e)}" cy="${py(cur)}" r="4" fill="var(--up)"/></svg>
+ <div class="lg"><span>${dt(w)}</span><span>상승 지역 비율 추이</span><span>${dt(T)}</span></div>`;
+ main();pop()}
+const full=(n,m)=>m=='서울'?(n=='중구'?n:n+'구'):n+('연천가평양평'.includes(n)?'군':'시');
+const fd=t=>{const d=new Date(END-(T-t)*6048e5);return`${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`};
+function pop(){const el=$('#pop');if(S.pop==null){el.className='';el.innerHTML='';return}
+ const x=data(S.m,S.k)[S.pop],e=S.e,w=S.w,c=chg(x,e,w);
+ el.className='on';el.innerHTML=`<div><h3><span>${full(P[S.m].R[S.pop].n,S.m)} ${S.k?'전세':'매매'}</span><button data-x aria-label="닫기">×</button></h3><p>${fd(e-w)} : ${x[e-w].toFixed(1)}</p><p>${fd(e)} : ${x[e].toFixed(1)}</p><p>변동률 : <b class="${c>=0?'up':'dn'}">${pc(c)}</b></p></div>`}
 function main(){
  const g=P[S.m],A=[0,1].map(k=>{const D=data(S.m,k);return S.sel==null?D[0].map((_,t)=>D.reduce((s,x)=>s+x[t],0)/D.length):D[S.sel]});
  $('#ct').textContent=`${S.sel==null?S.m+' 평균':g.R[S.sel].n} 지수와 주간 변동률`;
  const W=340,L=34,R=8,all=A[0].concat(A[1]),lo=Math.min(...all),hi=Math.max(...all),X=t=>L+(W-L-R)*t/T,Y=q=>10+100*(1-(q-lo)/(hi-lo));
- const pl=a=>a.map((q,t)=>X(t).toFixed(1)+','+Y(q).toFixed(1)).join(' '),a=A[S.k],rt=a.map((q,t)=>t?(q/a[t-1]-1)*100:0),mr=Math.max(.2,...rt.map(Math.abs));
- const bars=rt.map((r,t)=>t?`<rect x="${(X(t)-.8).toFixed(1)}" y="${r>0?148-r/mr*26:148}" width="1.6" height="${(Math.abs(r)/mr*26).toFixed(1)}" fill="${r>0?'var(--up)':'var(--dn)'}" opacity=".7"/>`:'').join('');
+ const pl=a=>a.map((q,t)=>X(t).toFixed(1)+','+Y(q).toFixed(1)).join(' '),a=A[S.k],rt=a.map((q,t)=>t?(q/a[t-1]-1)*100:0),mr=Math.max(.2,...rt.map(Math.abs)),bw=Math.max(.4,(W-L-R)/T);
+ const bars=rt.map((r,t)=>t?`<rect x="${(X(t)-bw/2).toFixed(1)}" y="${r>0?148-r/mr*26:148}" width="${bw.toFixed(2)}" height="${(Math.abs(r)/mr*26).toFixed(1)}" fill="${r>0?'var(--up)':'var(--dn)'}" opacity=".7"/>`:'').join('');
  const gl=[lo,(lo+hi)/2,hi].map(q=>`<line x1="${L}" x2="${W-R}" y1="${Y(q)}" y2="${Y(q)}" stroke="var(--line)"/><text x="${L-4}" y="${Y(q)+4}" text-anchor="end" font-size="10" fill="var(--mut)">${q.toFixed(0)}</text>`).join('');
  const xl=[0,Math.round(T/3),Math.round(2*T/3),T].map(t=>`<text x="${X(t)}" y="188" text-anchor="${t?t==T?'end':'middle':'start'}" font-size="10" fill="var(--mut)">${dt(t)}</text>`).join('');
  $('#ch').innerHTML=`<svg viewBox="0 0 340 192" role="img" aria-label="지수 및 변동률 그래프">${gl}<line x1="${L}" x2="${W-R}" y1="148" y2="148" stroke="var(--line)"/>${bars}<polyline fill="none" stroke="var(--dn)" stroke-width="2" points="${pl(A[0])}"/><polyline fill="none" stroke="var(--up)" stroke-width="2" points="${pl(A[1])}"/><line x1="${X(S.e)}" x2="${X(S.e)}" y1="10" y2="174" stroke="var(--fg)" stroke-dasharray="3 3"/>${xl}</svg>
  <div class="lg"><span><b class="dn">━</b> 매매지수 · <b class="up">━</b> 전세지수</span><span>아래 막대: ${S.k?'전세':'매매'} 주간 변동률</span></div>`}
 document.addEventListener('click',ev=>{const b=ev.target.closest('button[data-g]'),t=ev.target.closest('.t');
- if(b){const g=b.dataset.g,v=b.dataset.v;if(g=='gm'){S.m=v;S.sel=null}if(g=='gk')S.k=+v;if(g=='gw')S.w=+v;render()}
- else if(t){const i=+t.dataset.i;S.sel=S.sel===i?null:i;render()}});
+ if(b){const g=b.dataset.g,v=b.dataset.v;if(g=='gm'){S.m=v;S.sel=null;S.pop=null}if(g=='gk')S.k=+v;if(g=='gw')S.w=+v;render()}
+ else if(ev.target.closest('[data-x]')){S.pop=null;pop()}
+ else if(t){const i=+t.dataset.i;S.sel=S.sel===i?null:i;S.pop=S.sel;render()}});
+document.addEventListener('keydown',ev=>{if(ev.key=='Escape'){S.pop=null;pop()}});
 const sl=$('#sl');sl.min=56;sl.oninput=()=>{S.e=+sl.value;render()};
 $('#pl').onclick=()=>{if(S.id){clearInterval(S.id);S.id=0;$('#pl').textContent='▶ 재생';return}
- if(S.e>=T)S.e=56;$('#pl').textContent='❚❚ 정지';
- S.id=setInterval(()=>{S.e++;sl.value=S.e;render();if(S.e>=T){clearInterval(S.id);S.id=0;$('#pl').textContent='▶ 재생'}},110)};
+ if(S.e>=T)S.e=S.w;$('#pl').textContent='❚❚ 정지';
+ S.id=setInterval(()=>{S.e=Math.min(T,S.e+(T>200?3:1));sl.value=S.e;render();if(S.e>=T){clearInterval(S.id);S.id=0;$('#pl').textContent='▶ 재생'}},110)};
 fetch('data.json',{cache:'no-cache'}).then(r=>r.ok?r.json():Promise.reject()).then(j=>{REAL=j.series;T=j.weeks;END=new Date(j.end+'T00:00:00');$('#bd').textContent='KB부동산 · '+j.updated+' 갱신'}).catch(()=>{}).then(()=>{S.e=T;sl.max=T;sl.value=T;render()});
 </script></body></html>
