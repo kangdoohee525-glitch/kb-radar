@@ -76,22 +76,44 @@ def build(sale, jeonse):
             "weeks": len(common) - 1, "series": res}
 
 async def download(dest=Path("raw")):
-    """KB 데이터허브 화면에서 '엑셀 저장' 버튼으로 매매/전세 지수 파일을 받는다. (화면 개편 시 선택자 수정 필요)"""
+    """KB 데이터허브 화면에서 '엑셀 저장' 버튼으로 매매/전세 지수 파일을 받는다.
+    실패하면 raw/ 폴더에 화면 캡처(debug.png), 화면 글자(page.txt), 통신 목록(calls.txt)을 남긴다."""
     from playwright.async_api import async_playwright
     dest.mkdir(exist_ok=True)
     async with async_playwright() as p:
         b = await p.chromium.launch()
-        pg = await (await b.new_context(accept_downloads=True, locale="ko-KR")).new_page()
-        await pg.goto(URL, wait_until="networkidle")
+        ctx = await b.new_context(accept_downloads=True, locale="ko-KR", viewport={"width": 1280, "height": 900})
+        pg = await ctx.new_page()
+        calls = []
+        pg.on("response", lambda r: calls.append(f"{r.status} {r.request.method} {r.url}")
+              if r.request.resource_type in ("xhr", "fetch", "document") else None)
         got = {}
-        for key, menu in (("sale", None), ("jeonse", re.compile(r"전세\s*가격지수"))):
-            if menu:
-                await pg.get_by_text(menu).first.click()
-                await pg.wait_for_load_state("networkidle")
-            async with pg.expect_download(timeout=60000) as d:
-                await pg.get_by_text("엑셀 저장").first.click()
-            got[key] = dest / f"{key}.xlsx"
-            await (await d.value).save_as(got[key])
+        try:
+            await pg.goto(URL, wait_until="networkidle", timeout=60000)
+            await pg.wait_for_timeout(3000)
+            for key, menu in (("sale", None), ("jeonse", re.compile(r"전세\s*가격지수"))):
+                if menu:
+                    await pg.get_by_text(menu).first.click(timeout=15000)
+                    await pg.wait_for_load_state("networkidle")
+                    await pg.wait_for_timeout(2000)
+                async with pg.expect_download(timeout=30000) as d:
+                    await pg.get_by_text("엑셀 저장").first.click(timeout=15000)
+                got[key] = dest / f"{key}.xlsx"
+                await (await d.value).save_as(got[key])
+        except Exception as ex:
+            text = ""
+            try:
+                await pg.screenshot(path=str(dest / "debug.png"), full_page=True)
+                text = await pg.inner_text("body")
+                (dest / "page.txt").write_text(text, encoding="utf-8")
+            except Exception:
+                pass
+            (dest / "calls.txt").write_text("\n".join(calls), encoding="utf-8")
+            print(f"[오류] 엑셀 다운로드 단계 실패 ({'/'.join(got) or '매매 지수'} 단계): {type(ex).__name__}: {str(ex)[:400]}", file=sys.stderr)
+            print("[참고] 화면에 보인 글자:", text[:300].replace("\n", " | "), file=sys.stderr)
+            await b.close()
+            sys.exit(1)
+        (dest / "calls.txt").write_text("\n".join(calls), encoding="utf-8")
         await b.close()
     return got["sale"], got["jeonse"]
 
