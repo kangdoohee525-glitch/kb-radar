@@ -57,6 +57,20 @@ def describe(o, depth=0, key="root"):
 
 def from_json(data):
     """KB 데이터허브 API의 JSON 응답 -> table()과 같은 (헤더, 본문). 날짜 목록 1개 + 지역별 숫자 배열을 자동 탐색."""
+    try:  # KB 데이터허브 실제 구조: dataBody.data.{날짜리스트, 데이터리스트[{지역명, dataList[{데이터, 기준날짜}]}]}
+        d = data["dataBody"]["data"]
+        keys, rows = d["날짜리스트"], d["데이터리스트"]
+        if rows and isinstance(rows[0]["dataList"][0], dict):
+            dts = _dates(keys)
+            names, cols = [], []
+            for r in rows:
+                m = {str(x.get("기준날짜")): x.get("데이터") for x in r["dataList"]}
+                names.append(str(r["지역명"]).strip())
+                cols.append([m.get(str(k)) for k in keys])
+            body = pd.DataFrame(dict(enumerate(cols)), index=pd.DatetimeIndex(dts)).apply(pd.to_numeric, errors="coerce")
+            return names, body.sort_index()
+    except (KeyError, TypeError, IndexError, ValueError):
+        pass
     dates = None
     for o in _walk(data):
         if isinstance(o, list) and len(o) >= 30 and all(isinstance(x, (str, int)) for x in o):
