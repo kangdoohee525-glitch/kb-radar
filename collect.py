@@ -91,13 +91,15 @@ async def download(dest=Path("raw")):
         try:
             await pg.goto(URL, wait_until="networkidle", timeout=60000)
             await pg.wait_for_timeout(3000)
-            for key, menu in (("sale", None), ("jeonse", re.compile(r"전세\s*가격지수"))):
+            for key, menu in (("sale", None), ("jeonse", r"text=/전세\s*가격지수/ >> visible=true")):
                 if menu:
-                    await pg.get_by_text(menu).first.click(timeout=15000)
+                    await pg.locator(menu).first.click(timeout=15000)
                     await pg.wait_for_load_state("networkidle")
                     await pg.wait_for_timeout(2000)
                 async with pg.expect_download(timeout=30000) as d:
-                    await pg.get_by_text("엑셀 저장").first.click(timeout=15000)
+                    # '엑셀 저장'은 접힌 메뉴(li.excel) 안에 숨어 있어 일반 클릭이 안 되므로 스크립트로 직접 누른다
+                    print(f"[정보] {key}: li.excel {await pg.locator('li.excel').count()}개 발견", file=sys.stderr)
+                    await pg.locator("li.excel").first.evaluate("el => el.click()")
                 got[key] = dest / f"{key}.xlsx"
                 await (await d.value).save_as(got[key])
         except Exception as ex:
