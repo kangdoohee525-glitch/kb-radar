@@ -18,8 +18,76 @@ ANCHOR = {c for m, (ns, _, _) in METRO.items() for n in ns for c in cands(n, m)}
 def asdate(v):
     return v if isinstance(v, (str, dtm.datetime)) else pd.NaT
 
+def _walk(o):
+    yield o
+    if isinstance(o, dict):
+        for v in o.values():
+            yield from _walk(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from _walk(v)
+
+def _dates(lst):
+    out = []
+    for v in lst:
+        s = re.sub(r"\D", "", str(v))[:8]
+        if len(s) != 8:
+            return None
+        try:
+            out.append(pd.Timestamp(f"{s[:4]}-{s[4:6]}-{s[6:]}"))
+        except Exception:
+            return None
+    return out
+
+def describe(o, depth=0, key="root"):
+    """JSON 구조 요약을 로그(stderr)에 출력 - 구조를 모를 때 원인 파악용"""
+    pad = "  " * depth
+    if isinstance(o, dict):
+        print(f"{pad}{key}: dict({len(o)}) 키={list(o)[:8]}", file=sys.stderr)
+        if depth < 4:
+            for k, v in list(o.items())[:6]:
+                describe(v, depth + 1, k)
+    elif isinstance(o, list):
+        first = json.dumps(o[0], ensure_ascii=False)[:150] if o else None
+        print(f"{pad}{key}: list({len(o)}) 첫 원소={first}", file=sys.stderr)
+        if o and depth < 4 and isinstance(o[0], (dict, list)):
+            describe(o[0], depth + 1, key + "[0]")
+    else:
+        print(f"{pad}{key}: {type(o).__name__} {str(o)[:60]}", file=sys.stderr)
+
+def from_json(data):
+    """KB 데이터허브 API의 JSON 응답 -> table()과 같은 (헤더, 본문). 날짜 목록 1개 + 지역별 숫자 배열을 자동 탐색."""
+    dates = None
+    for o in _walk(data):
+        if isinstance(o, list) and len(o) >= 30 and all(isinstance(x, (str, int)) for x in o):
+            d = _dates(o)
+            if d:
+                dates = d
+                break
+    names, cols = [], []
+    num = lambda x: x is None or isinstance(x, (int, float)) or re.fullmatch(r"-?\d+(\.\d+)?", str(x))
+    for o in _walk(data) if dates else []:
+        if not isinstance(o, dict):
+            continue
+        nm = next((o[k] for k in o if isinstance(o[k], str) and ("지역명" in k or k in ("name", "regionName"))), None) \
+            or next((v for v in o.values() if isinstance(v, str) and v.strip() in ANCHOR), None)
+        for v in o.values():
+            if nm and isinstance(v, list) and len(v) == len(dates) and any(x is not None for x in v) and all(num(x) for x in v):
+                vals = pd.to_numeric(pd.Series(v), errors="coerce")
+                if vals.median() > 20:  # 증감률(0 근처)이 아니라 지수(수십~백수십)만
+                    names.append(nm.strip())
+                    cols.append(vals.tolist())
+                    break
+    if not dates or len(names) < 5:
+        describe(data)
+        raise ValueError("JSON에서 날짜/지역별 지수 배열을 찾지 못했습니다. 위 구조 요약을 확인하세요.")
+    body = pd.DataFrame(dict(enumerate(cols)), index=pd.DatetimeIndex(dates))
+    return names, body.sort_index()
+
 def table(path):
-    """엑셀 -> (헤더 리스트, 날짜 인덱스 본문). 지역이 가로/세로 어느 쪽이든 자동 판별."""
+    """엑셀 또는 JSON -> (헤더 리스트, 날짜 인덱스 본문). 엑셀은 지역이 가로/세로 어느 쪽이든 자동 판별."""
+    if str(path).endswith(".json"):
+        return from_json(json.loads(Path(path).read_text(encoding="utf-8")))
     best = None
     for df in pd.read_excel(path, header=None, sheet_name=None).values():
         for d in (df, df.T):
@@ -90,8 +158,8 @@ def fetch_best(code, key, dest=Path("raw")):
             q = urllib.parse.urlencode({"매매전세코드": code, "기간": yrs, "매물종별구분": "01"})
             with urllib.request.urlopen(urllib.request.Request(f"{API}?{q}", headers=HDR), timeout=90) as r:
                 data = r.read()
-            if data[:2] != b"PK":
-                raise ValueError("엑셀이 아닌 응답: " + data[:100].decode("utf-8", "ignore"))
+            if data[:2] != b"PK":  # 엑셀이 아니면 JSON 응답(화면이 이 JSON으로 엑셀을 만든다)
+                p = p.with_suffix(".json")
             p.write_bytes(data)
             n = len(table(p)[1])
         except (Exception, SystemExit) as ex:
@@ -104,7 +172,7 @@ def fetch_best(code, key, dest=Path("raw")):
             break
     if not best:
         raise RuntimeError(f"{key}: 모든 기간 요청이 실패했습니다.")
-    final = dest / f"{key}.xlsx"
+    final = dest / f"{key}{best[1].suffix}"
     final.write_bytes(best[1].read_bytes())
     return final
 
