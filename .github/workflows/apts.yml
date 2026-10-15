@@ -17,5 +17,6 @@ jobs:
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
       - run: |
           git config user.name "kb-bot" && git config user.email "bot@users.noreply.github.com"
-          git add complexes_geo.csv complexes.json 2>/dev/null || true
+          git add complexes_geo.csv
+          [ -f complexes.json ] && git add complexes.json || true
           git diff --staged --quiet || (git commit -m "data: weekly apartment trades" && git push)
